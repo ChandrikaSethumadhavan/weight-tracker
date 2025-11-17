@@ -1,0 +1,17 @@
+.git
+.gitignore
+.venv
+env
+weight
+frontend/node_modules
+frontend/dist
+__pycache__
+*.pyc
+.mypy_cache
+.pytest_cache
+data/*.sqlite3
+data/*.sqlite3-wal
+data/*.sqlite3-shm
+.DS_Store
+Dockerfile
+docker-compose.yml

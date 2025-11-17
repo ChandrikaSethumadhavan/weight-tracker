@@ -1,3 +1,4 @@
-PyQt6>=6.7
-matplotlib>=3.8
+fastapi>=0.112
+uvicorn[standard]>=0.30
+pydantic>=2.8
 requests>=2.31

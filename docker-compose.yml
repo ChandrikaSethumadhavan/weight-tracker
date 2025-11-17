@@ -1,0 +1,16 @@
+version: "3.9"
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: glowup-api
+    ports:
+      - "${PORT:-8000}:8000"
+    environment:
+      - API_ALLOWED_ORIGINS=${API_ALLOWED_ORIGINS:-*}
+      - TARGET_CALORIES=${TARGET_CALORIES:-1500}
+      - DAILY_DEFICIT_GOAL=${DAILY_DEFICIT_GOAL:-500}
+    volumes:
+      - ./data:/app/data

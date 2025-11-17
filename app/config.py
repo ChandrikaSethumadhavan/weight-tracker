@@ -57,6 +57,7 @@ class AppConfig:
     reminder: ReminderSettings = field(default_factory=ReminderSettings)
     target_calories: int = 1500
     deficit_goal: int = 500
+    allowed_origins: list[str] = field(default_factory=lambda: ["*"])
 
     def apply_overrides(self, overrides: Mapping[str, str]) -> None:
         if "target_calories" in overrides:
@@ -105,6 +106,11 @@ def load_config() -> AppConfig:
 
     gif_urls_env = os.environ.get("MASCOT_GIFS", "")
     gif_urls = [item.strip() for item in gif_urls_env.split(",") if item.strip()]
+    origins_env = os.environ.get("API_ALLOWED_ORIGINS", "*").strip()
+    if origins_env in {"", "*"}:
+        allowed_origins = ["*"]
+    else:
+        allowed_origins = [item.strip() for item in origins_env.split(",") if item.strip()]
 
     email = EmailSettings(
         smtp_host=os.environ.get("EMAIL_SMTP_HOST"),
@@ -133,5 +139,6 @@ def load_config() -> AppConfig:
         reminder=reminder,
         target_calories=_parse_int(os.environ.get("TARGET_CALORIES"), 1500),
         deficit_goal=_parse_int(os.environ.get("DAILY_DEFICIT_GOAL"), 500),
+        allowed_origins=allowed_origins,
     )
     return cfg

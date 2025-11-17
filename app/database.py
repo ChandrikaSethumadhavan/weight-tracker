@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS food_entries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     entry_date TEXT NOT NULL,
     description TEXT NOT NULL,
+    brand TEXT,
     meal_type TEXT NOT NULL DEFAULT 'general',
     calories REAL NOT NULL,
     carbs REAL NOT NULL DEFAULT 0,
@@ -36,6 +37,7 @@ CREATE TABLE IF NOT EXISTS workouts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     entry_date TEXT NOT NULL,
     description TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT 'custom',
     calories_burned REAL NOT NULL,
     duration_minutes REAL,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -104,10 +106,13 @@ class AppRepository:
                 "carbs": "ALTER TABLE food_entries ADD COLUMN carbs REAL NOT NULL DEFAULT 0",
                 "protein": "ALTER TABLE food_entries ADD COLUMN protein REAL NOT NULL DEFAULT 0",
                 "fat": "ALTER TABLE food_entries ADD COLUMN fat REAL NOT NULL DEFAULT 0",
+                "brand": "ALTER TABLE food_entries ADD COLUMN brand TEXT",
             }
             for column, statement in food_columns.items():
                 if not has_column("food_entries", column):
                     self._conn.execute(statement)
+            if not has_column("workouts", "category"):
+                self._conn.execute("ALTER TABLE workouts ADD COLUMN category TEXT NOT NULL DEFAULT 'custom'")
 
     # --- meta helpers -------------------------------------------------
     def set_meta(self, key: str, value: str) -> None:
@@ -177,17 +182,22 @@ class AppRepository:
             row = self._conn.execute("SELECT weight FROM weights ORDER BY entry_date DESC LIMIT 1").fetchone()
         return row["weight"] if row else None
 
-    # --- food ---------------------------------------------------------
-    def log_food(self, entry: FoodEntry) -> None:
+    def delete_weight(self, entry_date: date) -> None:
         with self._lock, self._conn:
-            self._conn.execute(
+            self._conn.execute("DELETE FROM weights WHERE entry_date=?", (_date_str(entry_date),))
+
+    # --- food ---------------------------------------------------------
+    def log_food(self, entry: FoodEntry) -> int:
+        with self._lock, self._conn:
+            cursor = self._conn.execute(
                 """
-                INSERT INTO food_entries(entry_date, description, meal_type, calories, carbs, protein, fat, source)
-                VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO food_entries(entry_date, description, brand, meal_type, calories, carbs, protein, fat, source)
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     _date_str(entry.entry_date),
                     entry.description,
+                    entry.brand,
                     entry.meal_type,
                     entry.calories,
                     entry.carbs,
@@ -196,12 +206,13 @@ class AppRepository:
                     entry.source,
                 ),
             )
+            return cursor.lastrowid
 
     def get_food_for_date(self, entry_date: date) -> List[sqlite3.Row]:
         with self._lock:
             rows = self._conn.execute(
                 """
-                SELECT id, description, meal_type, calories, carbs, protein, fat, source
+                SELECT id, description, brand, meal_type, calories, carbs, protein, fat, source
                 FROM food_entries WHERE entry_date=?
                 ORDER BY id
                 """,
@@ -210,22 +221,24 @@ class AppRepository:
         return rows
 
     # --- workouts -----------------------------------------------------
-    def log_workout(self, entry: WorkoutEntry) -> None:
+    def log_workout(self, entry: WorkoutEntry) -> int:
         with self._lock, self._conn:
-            self._conn.execute(
-                "INSERT INTO workouts(entry_date, description, calories_burned, duration_minutes) VALUES(?, ?, ?, ?)",
+            cursor = self._conn.execute(
+                "INSERT INTO workouts(entry_date, description, category, calories_burned, duration_minutes) VALUES(?, ?, ?, ?, ?)",
                 (
                     _date_str(entry.entry_date),
                     entry.description,
+                    entry.category,
                     entry.calories_burned,
                     entry.duration_minutes,
                 ),
             )
+            return cursor.lastrowid
 
     def get_workouts_for_date(self, entry_date: date) -> List[sqlite3.Row]:
         with self._lock:
             rows = self._conn.execute(
-                "SELECT id, description, calories_burned, duration_minutes FROM workouts WHERE entry_date=? ORDER BY id",
+                "SELECT id, description, category, calories_burned, duration_minutes FROM workouts WHERE entry_date=? ORDER BY id",
                 (_date_str(entry_date),),
             ).fetchall()
         return rows

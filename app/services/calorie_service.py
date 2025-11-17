@@ -80,6 +80,16 @@ class CalorieAdvisor:
 
         return self._heuristic_estimate(normalized)
 
+    def estimate_workout(self, category: str, description: str, duration_minutes: Optional[float]) -> CalorieEstimate:
+        minutes = max(duration_minutes or 30.0, 5.0)
+        context = f"Workout category: {category}\nExercises: {description}\nDuration: {minutes} minutes"
+        if self.openai_api_key:
+            try:
+                return self._ask_gpt_workout(context)
+            except Exception as error:  # pragma: no cover
+                return self._heuristic_workout(category, minutes, "gpt-fallback", error)
+        return self._heuristic_workout(category, minutes)
+
     # ------------------------------------------------------------------
     def _heuristic_estimate(self, text: str) -> CalorieEstimate:
         base = 120.0
@@ -112,6 +122,28 @@ class CalorieAdvisor:
         calories = max(20.0, base * multiplier + fuzz)
         carbs, protein, fat = self._macro_from_calories(calories, text)
         return CalorieEstimate(calories, "heuristic", carbs=carbs, protein=protein, fat=fat)
+
+    def _heuristic_workout(
+        self,
+        category: str,
+        minutes: float,
+        source: str = "heuristic",
+        error: Optional[Exception] = None,
+    ) -> CalorieEstimate:
+        intensity_map = {
+            "legs": 9.0,
+            "arms": 6.5,
+            "abs": 5.5,
+            "back": 7.0,
+            "cardio": 10.0,
+            "full-body": 8.0,
+        }
+        base_met = intensity_map.get(category.lower(), 7.0)
+        calories = max(30.0, base_met * minutes * 5.0)
+        estimate = CalorieEstimate(calories=calories, source=source)
+        if error:
+            estimate.note = str(error)
+        return estimate
 
     def _ask_gpt(self, description: str) -> CalorieEstimate:
         payload = {
@@ -152,6 +184,34 @@ class CalorieAdvisor:
             source="openai:gpt-4o-mini",
             raw_response=content,
         )
+
+    def _ask_gpt_workout(self, context: str) -> CalorieEstimate:
+        payload = {
+            "model": "gpt-4o-mini",
+            "temperature": 0.1,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You estimate calories burned for workouts. Respond only with JSON like {\"calories\":320}.",
+                },
+                {"role": "user", "content": context},
+            ],
+        }
+        response = self._session.post(
+            "https://api.openai.com/v1/chat/completions",
+            json=payload,
+            headers={"Authorization": f"Bearer {self.openai_api_key}"},
+            timeout=20,
+        )
+        response.raise_for_status()
+        data = response.json()
+        content = data["choices"][0]["message"]["content"]
+        try:
+            parsed = json.loads(content)
+            calories = float(parsed.get("calories", 0))
+        except json.JSONDecodeError:
+            calories = self._extract_number(content)
+        return CalorieEstimate(calories=calories, source="openai:gpt-4o-mini", raw_response=content)
 
     def _call_nutrition_api(self, description: str) -> CalorieEstimate:
         response = self._session.get(

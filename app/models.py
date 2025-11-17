@@ -17,6 +17,7 @@ class FoodEntry:
     entry_date: date
     description: str
     calories: float
+    brand: Optional[str] = None
     meal_type: str = "general"
     carbs: float = 0.0
     protein: float = 0.0
@@ -29,6 +30,7 @@ class WorkoutEntry:
     entry_date: date
     description: str
     calories_burned: float
+    category: str = "custom"
     duration_minutes: Optional[float] = None
 
 
