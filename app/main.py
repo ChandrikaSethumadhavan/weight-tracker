@@ -25,15 +25,17 @@ CICO_KCAL_PER_KG = 7700.0
 
 app = FastAPI(title="GlowUp Weight Journey API", version="2.0.0")
 
-allowed_origins = config.allowed_origins if hasattr(config, "allowed_origins") else ["*"]
+allowed_origins = getattr(config, "allowed_origins", ["*"]) or ["*"]
+allowed_origins = [origin.strip().rstrip("/") for origin in allowed_origins if origin and origin.strip()]
 if not allowed_origins:
   allowed_origins = ["*"]
+allow_credentials = "*" not in allowed_origins
 app.add_middleware(
   CORSMiddleware,
   allow_origins=allowed_origins,
   allow_methods=["*"],
   allow_headers=["*"],
-  allow_credentials=True,
+  allow_credentials=allow_credentials,
 )
 
 
