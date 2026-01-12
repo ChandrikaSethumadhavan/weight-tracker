@@ -137,6 +137,10 @@ class FastingStartPayload(BaseModel):
   start_time: datetime | None = None
 
 
+class FastingStopPayload(BaseModel):
+  end_time: datetime | None = None
+
+
 class SettingsPayload(BaseModel):
   target_calories: int | None = Field(default=None, ge=800, le=5000)
   deficit_goal: int | None = Field(default=None, ge=0, le=3000)
@@ -367,6 +371,26 @@ def list_food(entry_date: date = Query(default=date.today(), description="Date t
   ]
 
 
+@app.get("/api/foods/recent", response_model=List[FoodRecord], tags=["foods"])
+def list_recent_foods(limit: int = Query(default=30, ge=1, le=100), repo: AppRepository = Depends(get_repo)) -> List[FoodRecord]:
+  rows = repo.get_recent_foods(limit)
+  return [
+    FoodRecord(
+      id=row["id"],
+      entry_date=row["entry_date"],
+      description=row["description"],
+      brand=row["brand"],
+      meal_type=row["meal_type"],
+      calories=row["calories"],
+      carbs=row["carbs"],
+      protein=row["protein"],
+      fat=row["fat"],
+      source=row["source"],
+    )
+    for row in rows
+  ]
+
+
 @app.post("/api/foods", response_model=FoodRecord, status_code=status.HTTP_201_CREATED, tags=["foods"])
 def create_food(payload: FoodPayload, repo: AppRepository = Depends(get_repo)) -> FoodRecord:
   description = payload.description.strip()
@@ -396,13 +420,18 @@ def create_food(payload: FoodPayload, repo: AppRepository = Depends(get_repo)) -
     source=source,
   )
   entry_id = repo.log_food(entry)
-  record = FoodRecord(id=entry_id, **payload.dict())
-  record.calories = entry.calories
-  record.carbs = entry.carbs
-  record.protein = entry.protein
-  record.fat = entry.fat
-  record.source = entry.source
-  record.brand = brand
+  record = FoodRecord(
+    id=entry_id,
+    entry_date=entry.entry_date,
+    description=entry.description,
+    brand=entry.brand,
+    meal_type=entry.meal_type,
+    calories=entry.calories,
+    carbs=entry.carbs,
+    protein=entry.protein,
+    fat=entry.fat,
+    source=entry.source,
+  )
   return record
 
 
@@ -461,13 +490,20 @@ def get_fasting(repo: AppRepository = Depends(get_repo)) -> FastingStatus:
 @app.post("/api/fasting/start", response_model=FastingStatus, tags=["fasting"])
 def start_fasting(payload: FastingStartPayload | None = None, repo: AppRepository = Depends(get_repo)) -> FastingStatus:
   start_time = payload.start_time if payload and payload.start_time else datetime.utcnow()
+  # Strip timezone info to ensure naive datetime
+  if start_time.tzinfo is not None:
+    start_time = start_time.replace(tzinfo=None)
   repo.start_fasting(start_time)
   return _build_fasting_status(repo)
 
 
 @app.post("/api/fasting/stop", response_model=FastingStatus, tags=["fasting"])
-def stop_fasting(repo: AppRepository = Depends(get_repo)) -> FastingStatus:
-  session = repo.complete_fasting(datetime.utcnow())
+def stop_fasting(payload: FastingStopPayload | None = None, repo: AppRepository = Depends(get_repo)) -> FastingStatus:
+  end_time = payload.end_time if payload and payload.end_time else datetime.utcnow()
+  # Strip timezone info to ensure naive datetime
+  if end_time.tzinfo is not None:
+    end_time = end_time.replace(tzinfo=None)
+  session = repo.complete_fasting(end_time)
   if not session:
     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No active fast to stop.")
   return _build_fasting_status(repo)

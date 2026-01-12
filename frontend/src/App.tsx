@@ -36,12 +36,17 @@ function App() {
   const [selectedDate, setSelectedDate] = useState(todayISO);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [weights, setWeights] = useState<WeightRecord[]>([]);
+  const [recentFoods, setRecentFoods] = useState<FoodRecord[]>([]);
   const [foods, setFoods] = useState<FoodRecord[]>([]);
   const [workouts, setWorkouts] = useState<WorkoutRecord[]>([]);
   const [forecast, setForecast] = useState<CicoForecastPoint[]>([]);
   const [fasting, setFasting] = useState<FastingStatus | null>(null);
   const [manualStart, setManualStart] = useState("");
+  const [manualEnd, setManualEnd] = useState("");
+  const [logPastFastStart, setLogPastFastStart] = useState("");
+  const [logPastFastEnd, setLogPastFastEnd] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const [weightForm, setWeightForm] = useState<WeightFormState>({ weight: "", mood: "" });
@@ -69,6 +74,7 @@ function App() {
 
   useEffect(() => {
     refreshWeights();
+    refreshRecentFoods();
     refreshFasting();
   }, []);
 
@@ -92,6 +98,15 @@ function App() {
     try {
       const rows = await api.getWeights();
       setWeights(rows);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+
+  const refreshRecentFoods = async () => {
+    try {
+      const rows = await api.getRecentFoods();
+      setRecentFoods(rows);
     } catch (err) {
       setError((err as Error).message);
     }
@@ -164,6 +179,10 @@ function App() {
       fat: maybeNumber(foodForm.fat),
     };
     setLoading(true);
+    const needsEstimation = !payload.calories;
+    if (needsEstimation) {
+      setLoadingMessage("🤖 Estimating calories with AI... This may take 30-60 seconds.");
+    }
     try {
       await api.createFood(payload);
       setFoodForm({
@@ -175,11 +194,12 @@ function App() {
         protein: "",
         fat: "",
       });
-      await Promise.all([refreshSnapshot(), refreshDayEntries(), refreshForecast()]);
+      await Promise.all([refreshSnapshot(), refreshDayEntries(), refreshForecast(), refreshRecentFoods()]);
     } catch (err) {
       setError((err as Error).message);
     } finally {
       setLoading(false);
+      setLoadingMessage("");
     }
   };
 
@@ -224,7 +244,7 @@ function App() {
     setLoading(true);
     try {
       await api.deleteFood(id);
-      await Promise.all([refreshSnapshot(), refreshDayEntries(), refreshForecast()]);
+      await Promise.all([refreshSnapshot(), refreshDayEntries(), refreshForecast(), refreshRecentFoods()]);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -268,8 +288,27 @@ function App() {
 
   const handleStopFast = async () => {
     try {
-      const status = await api.stopFasting();
+      const status = await api.stopFasting(manualEnd ? new Date(manualEnd).toISOString() : undefined);
       setFasting(status);
+      setManualEnd("");
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+
+  const handleLogPastFast = async () => {
+    if (!logPastFastStart || !logPastFastEnd) {
+      setError("Please provide both start and end times for past fast.");
+      return;
+    }
+    try {
+      // Start the fast with backdated time
+      await api.startFasting(new Date(logPastFastStart).toISOString());
+      // Immediately complete it with the end time
+      const status = await api.stopFasting(new Date(logPastFastEnd).toISOString());
+      setFasting(status);
+      setLogPastFastStart("");
+      setLogPastFastEnd("");
     } catch (err) {
       setError((err as Error).message);
     }
@@ -351,6 +390,12 @@ function App() {
         </div>
       )}
 
+      {loadingMessage && (
+        <div className="card" style={{ background: "#eff6ff", border: "1px solid #3b82f6" }}>
+          <strong>{loadingMessage}</strong>
+        </div>
+      )}
+
       <section className="card form-grid">
         <div>
           <h3>Log weight</h3>
@@ -389,6 +434,29 @@ function App() {
               ))
             ) : (
               <li className="muted">Log your first weight to see history here.</li>
+            )}
+          </ul>
+        </div>
+        <div>
+          <h3>Recent meals</h3>
+          <ul className="list">
+            {recentFoods.length ? (
+              recentFoods.map((meal) => (
+                <li key={meal.id}>
+                  <div>
+                    <strong>{meal.description}</strong>
+                    <span className="muted">
+                      {meal.entry_date} · {meal.calories.toFixed(0)} kcal
+                      {meal.brand ? ` · ${meal.brand}` : ""}
+                    </span>
+                  </div>
+                  <button type="button" onClick={() => deleteMeal(meal.id)} disabled={loading}>
+                    Delete
+                  </button>
+                </li>
+              ))
+            ) : (
+              <li className="muted">Log your first meal to see history here.</li>
             )}
           </ul>
         </div>
@@ -621,14 +689,26 @@ function App() {
               ) : (
                 <p className="muted">Keep going to hit 16 hours!</p>
               )}
-              <label className="muted">
-                Started at (optional)
-                <input
-                  type="datetime-local"
-                  value={manualStart}
-                  onChange={(event) => setManualStart(event.target.value)}
-                />
-              </label>
+              {!fasting?.is_active && (
+                <label style={{ fontWeight: 500 }}>
+                  ⏰ Started at (optional)
+                  <input
+                    type="datetime-local"
+                    value={manualStart}
+                    onChange={(event) => setManualStart(event.target.value)}
+                  />
+                </label>
+              )}
+              {fasting?.is_active && (
+                <label style={{ fontWeight: 500 }}>
+                  🏁 Ended at (optional)
+                  <input
+                    type="datetime-local"
+                    value={manualEnd}
+                    onChange={(event) => setManualEnd(event.target.value)}
+                  />
+                </label>
+              )}
               <div className="fasting-actions">
                 {fasting?.is_active ? (
                   <button type="button" onClick={handleStopFast} disabled={loading}>
@@ -645,6 +725,33 @@ function App() {
               </div>
             </div>
           </div>
+
+          <div style={{ marginTop: "20px", padding: "15px", background: "#f9fafb", borderRadius: "8px", border: "1px solid #e5e7eb" }}>
+            <h4 style={{ marginTop: 0 }}>📝 Log a past fast</h4>
+            <p className="muted" style={{ fontSize: "0.9em", marginBottom: "10px" }}>
+              Use this to log a completed fast from yesterday or earlier
+            </p>
+            <label style={{ fontWeight: 500 }}>
+              Start time
+              <input
+                type="datetime-local"
+                value={logPastFastStart}
+                onChange={(event) => setLogPastFastStart(event.target.value)}
+              />
+            </label>
+            <label style={{ fontWeight: 500 }}>
+              End time
+              <input
+                type="datetime-local"
+                value={logPastFastEnd}
+                onChange={(event) => setLogPastFastEnd(event.target.value)}
+              />
+            </label>
+            <button type="button" onClick={handleLogPastFast} disabled={loading}>
+              Log past fast
+            </button>
+          </div>
+
           <h4>Recent fasts</h4>
           <ul className="list">
             {fastingHistory.length ? (

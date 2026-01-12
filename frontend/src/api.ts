@@ -50,6 +50,9 @@ export const api = {
   getFoods(entryDate: string) {
     return request<FoodRecord[]>(`/api/foods?entry_date=${entryDate}`);
   },
+  getRecentFoods(limit = 30) {
+    return request<FoodRecord[]>(`/api/foods/recent?limit=${limit}`);
+  },
   createFood(payload: FoodPayload) {
     return request<FoodRecord>("/api/foods", {
       method: "POST",
@@ -83,7 +86,10 @@ export const api = {
       body: JSON.stringify(startTime ? { start_time: startTime } : {}),
     });
   },
-  stopFasting() {
-    return request<FastingStatus>("/api/fasting/stop", { method: "POST" });
+  stopFasting(endTime?: string) {
+    return request<FastingStatus>("/api/fasting/stop", {
+      method: "POST",
+      body: JSON.stringify(endTime ? { end_time: endTime } : {}),
+    });
   },
 };

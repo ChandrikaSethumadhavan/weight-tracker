@@ -220,6 +220,18 @@ class AppRepository:
             ).fetchall()
         return rows
 
+    def get_recent_foods(self, limit: int = 30) -> List[sqlite3.Row]:
+        with self._lock:
+            return self._conn.execute(
+                """
+                SELECT id, entry_date, description, brand, meal_type, calories, carbs, protein, fat, source
+                FROM food_entries
+                ORDER BY entry_date DESC, id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+
     # --- workouts -----------------------------------------------------
     def log_workout(self, entry: WorkoutEntry) -> int:
         with self._lock, self._conn:
